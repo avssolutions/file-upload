@@ -63,22 +63,20 @@ export class SimpleFileUploadComponent extends FileUploadAbstract implements Con
 
     @HostBinding('class.has-files')
     public get hasFiles(): boolean {
-        return this.control.isListVisible && this.control.size > 0;
+                               return this.control.isListVisible && this.control.size > 0;
     }
 
     @HostBinding('class.ng-invalid')
     public get isInvalid(): boolean {
-        return !this.control.disabled && this.control.invalid;
+              return !this.control.disabled && this.control.invalid;
     }
 
     public onInputChange(event: Event): void {
         const input = (event.target) as HTMLInputElement;
-
         if (!this.control.disabled && input.files.length > 0) {
             this.control.setValue(Array.from(input.files));
             this.clearInputEl();
         }
-
         this.onTouch();
     }
 

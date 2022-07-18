@@ -3,7 +3,6 @@ import { ComponentFixture, TestBed, fakeAsync, tick, waitForAsync } from '@angul
 import { Component, ViewChild, ElementRef } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
-import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { FileUploadModule, FileUploadControl, FileUploadValidators } from './../../file-upload.module';
 
 
@@ -79,7 +78,7 @@ describe('FileUpload[simple]', () => {
         ReactiveFormsModule,
         FormsModule,
         FileUploadModule,
-        NoopAnimationsModule
+
     ],
     declarations: [FileUploadComponentHost],
     teardown: { destroyAfterEach: false }

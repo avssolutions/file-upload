@@ -23,3 +23,7 @@
 :host-context(.list-visible) .upload-text {
     display: none;
 }
+
+:host-context(.has-files) .upload-text {
+  display: none;
+}

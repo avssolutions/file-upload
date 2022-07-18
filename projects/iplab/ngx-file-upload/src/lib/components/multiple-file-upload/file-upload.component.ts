@@ -1,271 +1,258 @@
 import {
-    Component,
-    Input,
-    ElementRef,
-    HostListener,
-    Renderer2,
-    HostBinding,
-    Inject,
-    TemplateRef,
-    ViewChild,
-    ChangeDetectionStrategy,
-    ContentChild,
-    forwardRef,
-    ChangeDetectorRef
-} from '@angular/core';
-import { DOCUMENT } from '@angular/common';
-import { NG_VALUE_ACCESSOR, ControlValueAccessor } from '@angular/forms';
-import { AnimationEvent } from '@angular/animations';
+  Component,
+  Input,
+  ElementRef,
+  HostListener,
+  Renderer2,
+  HostBinding,
+  Inject,
+  TemplateRef,
+  ViewChild,
+  ChangeDetectionStrategy,
+  ContentChild,
+  forwardRef,
+  ChangeDetectorRef,
+} from "@angular/core";
+import { DOCUMENT } from "@angular/common";
+import { NG_VALUE_ACCESSOR, ControlValueAccessor } from "@angular/forms";
 
-import { FileUploadControl } from './../../helpers/control.class';
-import { FileUploadService } from './../../services/file-upload.service';
-import { InsertAnimation } from './../../animations/insert.animation';
-import { ZoomAnimation } from './../../animations/zoom.animation';
-import { FileUploadAbstract } from './../file-upload-abstract.component';
+import { FileUploadControl } from "./../../helpers/control.class";
+import { FileUploadService } from "./../../services/file-upload.service";
+import { FileUploadAbstract } from "./../file-upload-abstract.component";
 
-export const DRAGOVER = 'dragover';
-export const TOUCHED = 'ng-touched';
+export const DRAGOVER = "dragover";
+export const TOUCHED = "ng-touched";
 
 @Component({
-    selector: `file-upload:not([simple])`,
-    templateUrl: `./file-upload.component.html`,
-    styleUrls: [`./file-upload.component.scss`],
-    providers: [
-        FileUploadService,
-        {
-            provide: NG_VALUE_ACCESSOR,
-            useExisting: forwardRef(() => FileUploadComponent),
-            multi: true
-        }
-    ],
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    animations: [
-        ZoomAnimation,
-        InsertAnimation
-    ]
+  selector: `file-upload:not([simple])`,
+  templateUrl: `./file-upload.component.html`,
+  styleUrls: [`./file-upload.component.scss`],
+  providers: [
+    FileUploadService,
+    {
+      provide: NG_VALUE_ACCESSOR,
+      useExisting: forwardRef(() => FileUploadComponent),
+      multi: true,
+    },
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class FileUploadComponent extends FileUploadAbstract implements ControlValueAccessor {
+export class FileUploadComponent
+  extends FileUploadAbstract
+  implements ControlValueAccessor
+{
+  @Input()
+  public control: FileUploadControl = null;
 
-    @Input()
-    public control: FileUploadControl = null;
+  @Input()
+  public animation: boolean | string = false;
 
-    @Input()
-    public animation: boolean | string = true;
+  @Input("multiple")
+  public set multiple(isMultiple: boolean | string) {
+    this.isMultiple = isMultiple;
+    this.checkAndSetMultiple();
+  }
 
-    @Input('multiple')
-    public set multiple(isMultiple: boolean | string) {
-        this.isMultiple = isMultiple;
-        this.checkAndSetMultiple();
+  @ContentChild("placeholder")
+  public templateRef: TemplateRef<any> = null;
+
+  @ContentChild("item")
+  public listItem: TemplateRef<any> = null;
+
+  @ViewChild("inputRef", { static: true })
+  public input: ElementRef<HTMLInputElement>;
+
+  @ViewChild("labelRef", { static: true })
+  public label: ElementRef<HTMLLabelElement>;
+
+  public templateContext = {
+    $implicit: this.fileUploadService.isFileDragDropAvailable(),
+    isFileDragDropAvailable: this.fileUploadService.isFileDragDropAvailable(),
+  };
+
+  /** animation fields */
+  public zoomText: "zoomOut" | "zoomIn" | "static" = "static";
+  public listVisible: boolean = false;
+
+  constructor(
+    public fileUploadService: FileUploadService,
+    hostElementRef: ElementRef,
+    renderer: Renderer2,
+    @Inject(DOCUMENT) private document,
+    cdr: ChangeDetectorRef
+  ) {
+    super(hostElementRef, renderer, cdr);
+  }
+
+  @HostBinding("class.has-files")
+  public get hasFiles(): boolean {
+    return this.control.isListVisible && this.control.size > 0;
+  }
+
+  @HostBinding("class.ng-invalid")
+  public get isInvalid(): boolean {
+    return !this.control.disabled && this.control.invalid;
+  }
+
+  public trackByFn(index: number, item: File): string {
+    return item.name;
+  }
+
+  protected setEvents(): void {
+    super.setEvents();
+    [
+      "drag",
+      "dragstart",
+      "dragend",
+      "dragover",
+      "dragenter",
+      "dragleave",
+      "drop",
+    ].forEach((eventName) => {
+      this.hooks.push(
+        this.renderer.listen(this.document, eventName, (event: any) =>
+          this.preventDragEvents(event)
+        )
+      );
+    });
+
+    ["dragover", "dragenter"].forEach((eventName) => {
+      this.hooks.push(
+        this.renderer.listen(
+          this.hostElementRef.nativeElement,
+          eventName,
+          (event: any) => this.onDragOver(event)
+        )
+      );
+    });
+
+    ["dragleave", "dragend", "drop"].forEach((eventName) => {
+      this.hooks.push(
+        this.renderer.listen(
+          this.hostElementRef.nativeElement,
+          eventName,
+          (event: any) => this.onDragLeave(event)
+        )
+      );
+    });
+
+    this.subscriptions.push(
+      this.control.valueChanges.subscribe((files) => this.renderView())
+    );
+
+    this.subscriptions.push(
+      this.control.listVisibilityChanges.subscribe((status) =>
+        this.toggleListVisibility()
+      )
+    );
+  }
+
+  public onKeyDown(event: KeyboardEvent): void {
+    if (event.keyCode === 13 || event.keyCode === 32) {
+      event.preventDefault();
+      this.control.click();
     }
+  }
 
-    @ContentChild('placeholder')
-    public templateRef: TemplateRef<any> = null;
+  private preventDragEvents(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
 
-    @ContentChild('item')
-    public listItem: TemplateRef<any> = null;
-
-    @ViewChild('inputRef', { static: true })
-    public input: ElementRef<HTMLInputElement>;
-
-    @ViewChild('labelRef', { static: true })
-    public label: ElementRef<HTMLLabelElement>;
-
-    public templateContext = {
-        $implicit: this.fileUploadService.isFileDragDropAvailable(),
-        isFileDragDropAvailable: this.fileUploadService.isFileDragDropAvailable()
-    };
-
-    /** animation fields */
-    public zoomText: 'zoomOut' | 'zoomIn' | 'static' = 'static';
-    public listVisible: boolean = false;
-
-    constructor(
-        public fileUploadService: FileUploadService,
-        hostElementRef: ElementRef,
-        renderer: Renderer2,
-        @Inject(DOCUMENT) private document,
-        cdr: ChangeDetectorRef
-    ) {
-        super(hostElementRef, renderer, cdr);
+  private renderView(): void {
+    if (!this.listVisible) {
+      this.zoomText =
+        this.control.isListVisible && this.control.size > 0
+          ? "zoomOut"
+          : "static";
     }
+    this.cdr.markForCheck();
+  }
 
-    @HostBinding('class.has-files')
-    public get hasFiles(): boolean {
-        return this.control.isListVisible && this.control.size > 0;
+  private showList(): void {
+    if (this.zoomText !== "static") {
+      this.listVisible = true;
     }
+  }
 
-    @HostBinding('class.ng-invalid')
-    public get isInvalid(): boolean {
-        return !this.control.disabled && this.control.invalid;
+  private hideList(): void {
+    this.listVisible = false;
+  }
+
+  private toggleListVisibility(): void {
+    this.listVisible = this.control.isListVisible && this.control.size > 0;
+    if (this.listVisible) {
+      this.renderer.addClass(this.hostElementRef.nativeElement, "list-visible");
+      this.zoomText = "static";
     }
+    this.cdr.markForCheck();
+  }
 
-    @HostBinding('@.disabled')
-    public get isAnimationDisabled(): boolean {
-        return this.animation === false || (this.animation as string) === 'false';
+  /**
+   * on file over add class name
+   */
+  private onDragOver(event: Event): void {
+    this.renderer.addClass(this.hostElementRef.nativeElement, DRAGOVER);
+  }
+
+  /**
+   * on mouse out remove class name
+   */
+  private onDragLeave(event: Event): void {
+    this.renderer.removeClass(this.hostElementRef.nativeElement, DRAGOVER);
+  }
+
+  @HostListener("drop", ["$event"])
+  public onDrop(event: Event): void {
+    if (this.control.disabled) {
+      return;
     }
+    // There is some issue with DragEvent in typescript lib.dom.d.ts
+    const files = (event as any).dataTransfer.files;
+    this.control.addFiles(files);
+    this.onTouch();
+  }
 
-    public trackByFn(index: number, item: File): string {
-        return item.name;
+  public onInputChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (this.control.isListVisible && this.control.size > 0) {
+      this.showList();
+    } else {
+      this.hideList();
     }
-
-    protected setEvents(): void {
-        super.setEvents();
-        ['drag', 'dragstart', 'dragend', 'dragover', 'dragenter', 'dragleave', 'drop'].forEach((eventName) => {
-            this.hooks.push(
-                this.renderer.listen(this.document, eventName, (event: any) => this.preventDragEvents(event))
-            );
-        });
-
-        ['dragover', 'dragenter'].forEach((eventName) => {
-            this.hooks.push(
-                this.renderer.listen(this.hostElementRef.nativeElement, eventName, (event: any) => this.onDragOver(event))
-            );
-        });
-
-        ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
-            this.hooks.push(
-                this.renderer.listen(this.hostElementRef.nativeElement, eventName, (event: any) => this.onDragLeave(event))
-            );
-        });
-
-        this.subscriptions.push(
-            this.control.valueChanges.subscribe((files) => this.renderView())
-        );
-
-        this.subscriptions.push(
-            this.control.listVisibilityChanges.subscribe((status) => this.toggleListVisibility())
-        );
+    if (!this.control.disabled && input.files.length > 0) {
+      this.control.addFiles(input.files);
+      this.clearInputEl();
     }
+    this.onTouch();
+  }
 
-    public onKeyDown(event: KeyboardEvent): void {
-        if (event.keyCode === 13 || event.keyCode === 32) {
-            event.preventDefault();
-            this.control.click();
-        }
+  /**
+   * model -> view changes
+   */
+  public writeValue(files: any): void {
+    if (files != null) {
+      this.control.setValue(files);
     }
+  }
 
-    private preventDragEvents(event: Event): void {
-        event.preventDefault();
-        event.stopPropagation();
-    }
+  /**
+   * register function which will be called on UI change
+   * to update view -> model
+   */
+  public registerOnChange(fn: (v: Array<File>) => void): void {
+    this.onChange = fn;
+  }
 
-    private renderView(): void {
-        if (!this.listVisible) {
-            this.zoomText = this.control.isListVisible && this.control.size > 0 ? 'zoomOut' : 'static';
-        }
-        this.cdr.markForCheck();
-    }
+  private onTouch: () => void = () => {
+    this.renderer.addClass(this.hostElementRef.nativeElement, TOUCHED);
+  };
 
-    private showList(): void {
-        if (this.zoomText !== 'static') {
-            this.listVisible = true;
-        }
-    }
+  public registerOnTouched(fn: any): void {
+    this.onTouch = fn;
+  }
 
-    private hideList(): void {
-        this.listVisible = false;
-    }
-
-    private toggleListVisibility(): void {
-        this.listVisible = this.control.isListVisible && this.control.size > 0;
-        if (this.listVisible) {
-            this.renderer.addClass(this.hostElementRef.nativeElement, 'list-visible');
-            this.zoomText = 'static';
-        }
-        this.cdr.markForCheck();
-    }
-
-    /**
-     * on file over add class name
-     */
-    private onDragOver(event: Event): void {
-        this.renderer.addClass(this.hostElementRef.nativeElement, DRAGOVER);
-    }
-
-    /**
-     * on mouse out remove class name
-     */
-    private onDragLeave(event: Event): void {
-        this.renderer.removeClass(this.hostElementRef.nativeElement, DRAGOVER);
-    }
-
-    @HostListener('drop', ['$event'])
-    public onDrop(event: Event): void {
-        if (this.control.disabled) {
-            return;
-        }
-        // There is some issue with DragEvent in typescript lib.dom.d.ts
-        const files = (event as any).dataTransfer.files;
-        this.control.addFiles(files);
-        this.onTouch();
-    }
-
-    public onInputChange(event: Event): void {
-        const input = (event.target) as HTMLInputElement;
-
-        if (!this.control.disabled && input.files.length > 0) {
-            this.control.addFiles(input.files);
-            this.clearInputEl();
-        }
-
-        this.onTouch();
-    }
-
-     /**
-      * model -> view changes
-      */
-    public writeValue(files: any): void {
-        if (files != null) {
-            this.control.setValue(files);
-        }
-    }
-
-    /**
-     * register function which will be called on UI change
-     * to update view -> model
-     */
-    public registerOnChange(fn: (v: Array<File>) => void): void {
-        this.onChange = fn;
-    }
-
-    private onTouch: () => void = () => {
-        this.renderer.addClass(this.hostElementRef.nativeElement, TOUCHED);
-    };
-
-    public registerOnTouched(fn: any): void {
-        this.onTouch = fn;
-    }
-
-    public setDisabledState(isDisabled: boolean): void {
-        this.control.disable(isDisabled);
-    }
-
-    public zoomAnimationDone(event: AnimationEvent): void {
-        if (this.control.isListVisible && this.control.size > 0) {
-            this.showList();
-        } else {
-            this.hideList();
-        }
-
-        if (event.fromState === 'static' && event.toState === 'zoomOut') {
-            this.renderer.addClass(this.hostElementRef.nativeElement, 'hide-text');
-        } else {
-            this.renderer.removeClass(this.hostElementRef.nativeElement, 'hide-text');
-        }
-
-        if (event.toState === 'zoomIn') {
-            this.zoomText = 'static';
-        }
-    }
-
-    public animationListFinished(event: AnimationEvent): void {
-        if (event.toState === 'void') {
-            this.zoomText = 'zoomIn';
-            this.renderer.removeClass(this.hostElementRef.nativeElement, 'list-visible');
-        }
-        if (event.fromState === 'void') {
-            this.zoomText = 'static';
-            this.renderer.addClass(this.hostElementRef.nativeElement, 'list-visible');
-        }
-    }
+  public setDisabledState(isDisabled: boolean): void {
+    this.control.disable(isDisabled);
+  }
 }
